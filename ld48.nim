@@ -90,6 +90,9 @@ defineEffects:
     particles(e.id, 5, e.x, e.y, 14.px * e.fin):
       fillCircle(x, y, 3.px * e.fout, color = %"ffc0ff")
 
+  bolt(lifetime = 0.1):
+    fillPoly(e.x, e.y, 3, 8.px * e.fout, z = layerBloom, rotation = e.rotation, color = colorWhite)
+
 #endregion
 
 #region global variables
@@ -150,11 +153,11 @@ template genWorld(cx, cy: int, first = false) =
     setWall(worldSize - 1, i, blockDirt)
     setWall(i, 0, blockDirt)
 
-  discard newEntityWith(Enemy(), Spiker(), Pos(y: 5, x: rand(0.5f..worldSize.float32 - 1)), Solid(), Vel(), Health(value: 1))
+  discard newEntityWith(Enemy(), Spiker(), Pos(y: 5, x: rand(0.5f..worldSize.float32 - 1)), Solid(), Vel(), Health(value: 1), Hit(s: 0.9))
 
-  for x, y, t in allTiles():
-    if t.empty and fractal(x.float, y.float + 30, 2, freq = 0.1) > 0.3:
-      setWall(x, y, t.back)
+  #for x, y, t in allTiles():
+  #  if t.empty and fractal(x.float, y.float + 30, 2, freq = 0.1) > 0.3:
+  #    setWall(x, y, t.back)
 
   #create gaps
   var
@@ -180,13 +183,12 @@ template restart =
   genWorld(0, 1, true)
   discard newEntityWith(Player(xs: 1f, ys: 1f), Pos(y: 5, x: worldSize/2), Input(), Falling(), Solid(), Vel(xdrag: 50, ydrag: 2), Health(value: 2), Hit(s: 0.8))
 
-
-macro shoot(t: untyped, ent: EntityRef, xp, yp, rot: float32, speed = 0.1, damage = 1, life = 400f) =
+macro shoot(t: untyped, ent: EntityRef, xp, yp, rot: float32, speed = 0.1, damage = 1, life = 400f, size = 0.2f) =
   let effectId = ident("effectId" & t.repr.capitalizeAscii)
   result = quote do:
     let vel = vec2l(`rot`, `speed`)
     #hitEffect: effectIdHit,
-    discard newEntityWith(Pos(x: `xp`, y: `yp`), Timed(lifetime: `life`), Effect(id: `effectId`, rotation: `rot`), Bullet(shooter: `ent`), Hit(s: 0.2), Vel(x: vel.x, y: vel.y), Damage(amount: `damage`))
+    discard newEntityWith(Pos(x: `xp`, y: `yp`), Timed(lifetime: `life`), Effect(id: `effectId`, rotation: `rot`), Bullet(shooter: `ent`), Hit(s: `size`), Vel(x: vel.x, y: vel.y), Damage(amount: `damage`))
 
 template timer(time: untyped, delay: float32, body: untyped) =
   time += fau.delta
@@ -214,7 +216,11 @@ sys("controlled", [Input, Pos, Vel, Player]):
       item.player.xs = 0.6f
 
     #TODO attack
-    if keyJ.tapped:
+    if keyMouseLeft.tapped:
+      let ang = (mouseWorld() - item.pos.vec2).nor * 0.5
+      item.vel.x += ang.x
+      item.vel.y += ang.y
+      shoot(bolt, item.entity, item.pos.x, item.pos.y, ang.angle, speed = 0.4f, life = 0.15f, size = 0.6f)
       discard
 
     template transition(cx, cy: int) =
