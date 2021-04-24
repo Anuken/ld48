@@ -16,6 +16,8 @@ const
   pixelation = (scl / tsize).int
   edgeDark = rgb(1.6)
   edgeLight = rgb(0.4)
+  backCol = rgb(0.4)
+  layerBack = -2f
 
 type
   Rot = range[0..3]
@@ -96,6 +98,19 @@ iterator eachTile*(): tuple[x, y: int, tile: Tile] =
 
       yield (wcx, wcy, tile(wcx, wcy))
 
+proc genWorld(cx, cy: int) =
+  for tile in tiles.mitems:
+    tile.wall = blockAir
+    tile.back = blockDirt
+
+  for i in 0..<worldSize:
+    if abs(i + 0.5 - worldSize/2f) > 5:
+      setWall(i, worldSize - 1, blockDirt)
+      setWall(0, i, blockDirt)
+      setWall(worldSize - 1, i, blockDirt)
+
+    setWall(i, 0, blockDirt)
+
 #endregion
 
 #region systems
@@ -111,6 +126,17 @@ sys("controlled", [Input, Pos, Vel]):
     if keySpace.tapped and item.vel.onGround:
       item.vel.y += jumpvel
       effectJump(item.pos.x, item.pos.y - hitsize)
+
+    template transition(cx, cy: int) =
+      item.pos.x = (item.pos.x + 0.5f).emod(worldSize) - 0.5f
+      item.pos.y = (item.pos.y + 0.5f).emod(worldSize) - 0.5f
+      genWorld(cx, cy)
+
+    #transition levels
+    if item.pos.x < -0.5: transition(-1, 0)
+    elif item.pos.y < -0.5: transition(0, -1)
+    elif item.pos.x > worldSize - 0.5: transition(1, 0)
+    #elif item.pos.x > worldSize: transition(1, 0)
 
 sys("falling", [Falling, Vel]):
   all:
@@ -168,14 +194,9 @@ sys("draw", [Main]):
     fau.pixelScl = 1f / tsize
     initContent()
 
-    for tile in tiles.mitems:
-      tile.wall = blockAir
-      tile.back = blockAir
+    genWorld(0, 1)
 
-    for i in 0..<worldSize:
-      setWall(i, 0, blockDirt)
-
-    discard newEntityWith(Player(), DrawPlayer(), Pos(y: 5), Input(), Falling(), Solid(), Vel(xdrag: 50, ydrag: 2))
+    discard newEntityWith(Player(), DrawPlayer(), Pos(y: 5, x: worldSize/2), Input(), Falling(), Solid(), Vel(xdrag: 50, ydrag: 2))
 
     #load all block textures before rendering
     for b in blockList:
@@ -211,10 +232,13 @@ sys("draw", [Main]):
     for x, y, t in eachTile():
       let r = hashInt(x + y * worldSize)
       if t.back.id != 0:
-        draw(t.back.patches[r mod t.back.patches.len], x, y)
+        draw(t.back.patches[r mod t.back.patches.len], x, y, z = layerBack, color = backCol)
+        for dx, dy, i in d4i():
+          if tile(x + dx, y + dy).back.id != t.back.id:
+            draw(edge, x, y, rotation = i * 90.rad, color = if i > 1: edgeLight * t.back.color * backCol else: edgeDark * t.back.color * backCol, z = layerBack + 0.1)
 
       if t.wall.id != 0:
-        let reg = t.wall.name.patch
+        let reg = t.wall.patches[r mod t.wall.patches.len]
         draw(reg, x, y)
         for dx, dy, i in d4i():
           if tile(x + dx, y + dy).wall.id != t.wall.id:
