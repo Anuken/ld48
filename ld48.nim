@@ -50,6 +50,7 @@ registerComponents(defaultComponentOptions):
       s: float32
     Player = object
       xs, ys: float32
+      side: bool
       wasGround: bool
     Health = object
       value: int
@@ -207,6 +208,11 @@ sys("controlled", [Input, Pos, Vel, Player]):
     let v = vec2(axis(keyA, keyD), 0).lim(1) * pspeed * fau.delta
     item.vel.x += v.x
     item.vel.y += v.y
+    if v.x < 0: item.player.side = true
+    if v.x > 0: item.player.side = false
+
+    if item.vel.x.abs > 0:
+      item.player.xs += sin(fau.time, 1f / 20f, 0.06)
 
     if keySpace.tapped and item.vel.hang > 0:
       item.vel.y += jumpvel
@@ -216,7 +222,7 @@ sys("controlled", [Input, Pos, Vel, Player]):
       item.player.xs = 0.6f
 
     #TODO attack
-    if keyMouseLeft.tapped:
+    if keyMouseLeft.tapped and false:
       let ang = (mouseWorld() - item.pos.vec2).nor * 0.5
       item.vel.x += ang.x
       item.vel.y += ang.y
@@ -434,7 +440,7 @@ sys("drawPlayer", [Player, Pos]):
     let alpha = 10.0 * fau.delta
     item.player.xs = item.player.xs.lerpc(1.0, alpha)
     item.player.ys = item.player.ys.lerpc(1.0, alpha)
-    draw("player".patch, item.pos.x, item.pos.y, xscl = item.player.xs, yscl = item.player.ys)
+    draw("player".patch, item.pos.x, item.pos.y, xscl = item.player.xs * -item.player.side.sign, yscl = item.player.ys)
 
 sys("drawSpiker", [Spiker, Pos, Enemy]):
   all:
