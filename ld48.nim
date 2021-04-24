@@ -5,7 +5,7 @@ static: echo staticExec("faupack -p:assets-raw/sprites -o:assets/atlas")
 #region types & consts
 
 const
-  scl = 48f
+  scl = 36f
   worldSize = 20
   gravity = 2f
   pspeed = 12f
@@ -14,6 +14,8 @@ const
   tsize = 12f
   maxvel = 0.7f
   pixelation = (scl / tsize).int
+  edgeDark = rgb(1.6)
+  edgeLight = rgb(0.4)
 
 type
   Rot = range[0..3]
@@ -24,6 +26,7 @@ type
   Block = ref object of Content
     solid: bool
     patches: seq[Patch]
+    color: Color
 
   QuadRef = object
     entity: EntityRef
@@ -52,12 +55,12 @@ registerComponents(defaultComponentOptions):
 
 makeContent:
   air = Block()
-  dirt = Block(solid: true)
+  dirt = Block(solid: true, color: %"663931")
 
 defineEffects:
   jump(lifetime = 0.3):
-    particles(e.id, 5, e.x, e.y, 10.px * e.fin):
-      fillCircle(x, y, 9.px * e.fout, color = %"663931")
+    particles(e.id, 5, e.x, e.y, 11.px * e.fin):
+      fillCircle(x, y, 7.px * e.fout, color = %"c3c3c3")
 
 #endregion
 
@@ -132,7 +135,9 @@ sys("momentum", [Vel]):
 
 sys("camfollow", [Input, Pos]):
   all:
-    fau.cam.pos = item.pos.vec2
+    fau.cam.pos = vec2(worldSize.float32) / 2.0 - 0.5f
+    fau.cam.pos += vec2((fau.widthf mod scl) / scl, (fau.heightf mod scl) / scl) * fau.pixelScl
+    #fau.cam.pos = item.pos.vec2
 
 sys("quadtree", [Pos, Vel, Hit]):
   vars:
@@ -200,6 +205,8 @@ sys("draw", [Main]):
       buf.blitQuad()
     )
 
+    var edge = "edge".patch
+
     #draw all tiles
     for x, y, t in eachTile():
       let r = hashInt(x + y * worldSize)
@@ -209,6 +216,10 @@ sys("draw", [Main]):
       if t.wall.id != 0:
         let reg = t.wall.name.patch
         draw(reg, x, y)
+        for dx, dy, i in d4i():
+          if tile(x + dx, y + dy).wall.id != t.wall.id:
+            draw(edge, x, y, rotation = i * 90.rad, color = if i > 1: edgeLight * t.wall.color else: edgeDark * t.wall.color)
+
 
 sys("drawPlayer", [Player, Pos]):
   all:
