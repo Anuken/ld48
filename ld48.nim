@@ -29,7 +29,9 @@ type
     solid: bool
     patches: seq[Patch]
     top: Patch
+    border: bool
     color: Color
+    sway: bool
 
   QuadRef = object
     entity: EntityRef
@@ -58,7 +60,8 @@ registerComponents(defaultComponentOptions):
 
 makeContent:
   air = Block()
-  dirt = Block(solid: true, color: %"663931")
+  dirt = Block(solid: true, border: true, color: %"663931")
+  grass = Block(solid: false, sway: true)
 
 defineEffects:
   jump(lifetime = 0.3):
@@ -116,6 +119,9 @@ proc genWorld(cx, cy: int) =
       setWall(i, worldSize - 1, blockDirt)
       setWall(0, i, blockDirt)
       setWall(worldSize - 1, i, blockDirt)
+      if chance(0.4):
+        setWall(i, 1, blockGrass)
+
     setWall(i, 0, blockDirt)
 
 #endregion
@@ -240,20 +246,32 @@ sys("draw", [Main]):
     #draw all tiles
     for x, y, t in eachTile():
       let r = hashInt(x + y * worldSize)
+
+      #background
       if t.back.id != 0:
         draw(t.back.patches[r mod t.back.patches.len], x, y, z = layerBack, color = backCol)
         for dx, dy, i in d4i():
           if tile(x + dx, y + dy).back.id != t.back.id:
             draw(edge, x, y, rotation = i * 90.rad, color = if i > 1: edgeLight * t.back.color * backCol else: edgeDark * t.back.color * backCol, z = layerBack + 0.1)
 
+      #draw wall stuff
       if t.wall.id != 0:
         let reg = t.wall.patches[r mod t.wall.patches.len]
-        draw(reg, x, y)
-        for dx, dy, i in d4i():
-          if tile(x + dx, y + dy).wall.id != t.wall.id:
-            draw(edge, x, y, rotation = i * 90.rad, color = if i > 1: edgeLight * t.wall.color else: edgeDark * t.wall.color)
 
-      if t.wall.top.exists and tile(x, y + 1).wall.id == 0:
+        if t.wall.sway:
+          let trns = noise((fau.time + x + y) / 2) * 6.px
+          drawv(reg, x, y, c2 = vec2(trns, 0), c3 = vec2(trns, 0))
+        else:
+          draw(reg, x, y)
+
+        #borders
+        if t.wall.border:
+          for dx, dy, i in d4i():
+            if tile(x + dx, y + dy).wall.id != t.wall.id:
+              draw(edge, x, y, rotation = i * 90.rad, color = if i > 1: edgeLight * t.wall.color else: edgeDark * t.wall.color)
+
+      #top region, if applicable
+      if t.wall.top.exists and not tile(x, y + 1).wall.solid:
         draw(t.wall.top, x, y)
 
 
