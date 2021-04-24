@@ -1,12 +1,11 @@
-import ecs, presets/[basic, effects, content], math, sequtils
+import ecs, presets/[basic, effects, content], math, sequtils, quadtree
 
 static: echo staticExec("faupack -p:assets-raw/sprites -o:assets/atlas")
 
 #region types & consts
 
 const
-  scl = 40f
-  pixelation = 4
+  scl = 48f
   worldSize = 20
   gravity = 2f
   pspeed = 12f
@@ -14,6 +13,7 @@ const
   jumpvel = 0.7f
   tsize = 12f
   maxvel = 0.7f
+  pixelation = (scl / tsize).int
 
 type
   Rot = range[0..3]
@@ -25,22 +25,39 @@ type
     solid: bool
     patches: seq[Patch]
 
+  QuadRef = object
+    entity: EntityRef
+    x, y, w, h: float32
 
 registerComponents(defaultComponentOptions):
   type
     Vel = object
       x, y, xdrag, ydrag: float32
+      onGround: bool
 
+    Hit = object
+      s: float32
     Player = object
     DrawPlayer = object
+    Health = object
+      value, max: float32
 
+    Enemy = object
     Input = object
     Falling = object
     Solid = object
+    Bullet = object
+      damage: float32
+      shooter: EntityRef
 
 makeContent:
   air = Block()
   dirt = Block(solid: true)
+
+defineEffects:
+  jump(lifetime = 0.3):
+    particles(e.id, 5, e.x, e.y, 10.px * e.fin):
+      fillCircle(x, y, 9.px * e.fout, color = %"663931")
 
 #endregion
 
@@ -80,14 +97,17 @@ iterator eachTile*(): tuple[x, y: int, tile: Tile] =
 
 #region systems
 
+makeTimedSystem()
+
 sys("controlled", [Input, Pos, Vel]):
   all:
     let v = vec2(axis(keyA, keyD), 0).lim(1) * pspeed * fau.delta
     item.vel.x += v.x
     item.vel.y += v.y
 
-    if keySpace.tapped:
+    if keySpace.tapped and item.vel.onGround:
       item.vel.y += jumpvel
+      effectJump(item.pos.x, item.pos.y - hitsize)
 
 sys("falling", [Falling, Vel]):
   all:
@@ -98,6 +118,8 @@ sys("moveSolid", [Pos, Vel, Solid]):
     let delta = moveDelta(rectCenter(item.pos.x, item.pos.y, hitsize, hitsize), item.vel.x, item.vel.y, proc(x, y: int): bool = solid(x, y))
     item.pos.x += delta.x
     item.pos.y += delta.y
+    #is considered on ground when something is blocking the path down
+    item.vel.onGround = item.vel.y < 0 and delta.y.zero
     if delta.x.zero: item.vel.x = 0
     if delta.y.zero: item.vel.y = 0
 
@@ -111,6 +133,27 @@ sys("momentum", [Vel]):
 sys("camfollow", [Input, Pos]):
   all:
     fau.cam.pos = item.pos.vec2
+
+sys("quadtree", [Pos, Vel, Hit]):
+  vars:
+    tree: Quadtree[QuadRef]
+  init:
+    sys.tree = newQuadtree[QuadRef](rect(-0.5, -0.5, worldSize + 1, worldSize + 1))
+  start:
+    sys.tree.clear()
+  all:
+    sys.tree.insert(QuadRef(entity: item.entity, x: item.pos.x - item.hit.s/2.0, y: item.pos.y - item.hit.s/2.0, w: item.hit.s, h: item.hit.s))
+
+sys("collide", [Pos, Vel, Bullet, Hit]):
+  vars:
+    output: seq[QuadRef]
+  all:
+    sys.output.setLen(0)
+    let r = rectCenter(item.pos.x, item.pos.y, item.hit.s, item.hit.s)
+    sysQuadtree.tree.intersect(r, sys.output)
+    for elem in sys.output:
+      if elem.entity != item.bullet.shooter and elem.entity != item.entity and elem.entity.alive and item.bullet.shooter.alive and not(elem.entity.hasComponent(Enemy) and item.bullet.shooter.hasComponent(Enemy)):
+        discard
 
 sys("draw", [Main]):
   vars:
@@ -148,9 +191,16 @@ sys("draw", [Main]):
     fau.cam.resize(fau.widthf / scl, fau.heightf / scl)
     fau.cam.use()
 
-    #sys.buffer.resize(fau.width div pixelation, fau.height div pixelation)
+    sys.buffer.resize(fau.width div pixelation, fau.height div pixelation)
+    sys.buffer.push(colorClear)
+    let buf = sys.buffer
 
-    #draw all tiles TODO
+    draw(100, proc() =
+      buf.pop()
+      buf.blitQuad()
+    )
+
+    #draw all tiles
     for x, y, t in eachTile():
       let r = hashInt(x + y * worldSize)
       if t.back.id != 0:
@@ -163,6 +213,8 @@ sys("draw", [Main]):
 sys("drawPlayer", [Player, Pos]):
   all:
     draw("player".patch, item.pos.x, item.pos.y)
+
+makeEffectsSystem()
 
 #endregion
 
