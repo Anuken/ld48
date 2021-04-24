@@ -1,4 +1,4 @@
-import ecs, presets/[basic, effects, content]
+import ecs, presets/[basic, effects, content], math
 
 static: echo staticExec("faupack -p:assets-raw/sprites -o:assets/atlas")
 
@@ -38,7 +38,7 @@ var tiles = newSeq[Tile](worldSize * worldSize)
 #region utilities
 
 proc tile(x, y: int): Tile =
-  if x >= worldSize or y >= worldSize or x < 0 or y < 0: Tile(floor: if not arena: blockGrass else: blockDarkgrass, wall: blockAir) else: tiles[x + y*worldSize]
+  if x >= worldSize or y >= worldSize or x < 0 or y < 0: Tile(floor: blockAir, wall: blockAir) else: tiles[x + y*worldSize]
 
 proc setWall(x, y: int, wall: Block) = tiles[x + y*worldSize].wall = wall
 
