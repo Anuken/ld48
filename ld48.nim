@@ -14,7 +14,6 @@ const
   jumpvel = 0.8f
   tsize = 12f
   maxvel = 0.7f
-  pixelation = (scl / tsize).int
   edgeDark = rgb(1.6)
   edgeLight = rgb(0.4)
   backCol = rgb(0.4)
@@ -59,10 +58,9 @@ registerComponents(defaultComponentOptions):
     Falling = object
     Solid = object
     Bullet = object
-      damage: float32
       shooter: EntityRef
     Damage = object
-      amount: float32
+      amount: int
 
     #enemies
     Enemy = object
@@ -83,6 +81,14 @@ defineEffects:
   shadowBullet:
     fillCircle(e.x, e.y, 4.px, z = layerBloom, color = %"ff55ff")
     fillCircle(e.x, e.y, 2.px, z = layerBloom, color = %"ffc0ff")
+
+  pdeath(lifetime = 0.5):
+    particles(e.id, 10, e.x, e.y, 14.px * e.fin):
+      fillCircle(x, y, 7.px * e.fout, color = %"ffc0ff")
+
+  phit(lifetime = 0.2):
+    particles(e.id, 5, e.x, e.y, 14.px * e.fin):
+      fillCircle(x, y, 3.px * e.fout, color = %"ffc0ff")
 
 #endregion
 
@@ -123,7 +129,7 @@ iterator allTiles*(): tuple[x, y: int, tile: Tile] =
     for y in 0..<worldSize:
       yield (x, y, tiles[x + y * worldSize])
 
-template genWorld(cx, cy: int) =
+template genWorld(cx, cy: int, first = false) =
   for tile in tiles.mitems:
     tile.wall = blockAir
     tile.back = blockAir
@@ -144,7 +150,7 @@ template genWorld(cx, cy: int) =
     setWall(worldSize - 1, i, blockDirt)
     setWall(i, 0, blockDirt)
 
-  #discard newEntityWith(Enemy(), Spiker(), Pos(y: 5, x: rand(0.5f..worldSize.float32 - 1)), Solid(), Vel())
+  discard newEntityWith(Enemy(), Spiker(), Pos(y: 5, x: rand(0.5f..worldSize.float32 - 1)), Solid(), Vel(), Health(value: 1))
 
   for x, y, t in allTiles():
     if t.empty and fractal(x.float, y.float + 30, 2, freq = 0.1) > 0.3:
@@ -153,9 +159,9 @@ template genWorld(cx, cy: int) =
   #create gaps
   var
     left = cx == 1 or chance(0.3)
-    right = cx == -1 or chance(0.3)
+    right = cx == -1 or chance(0.3) or (first and not left)
     top = cy == -1
-    bot = chance(0.1) or not((left and cx != 1) or (right and cx != -1))
+    bot = (chance(0.1) or not((left and cx != 1) or (right and cx != -1))) and not first
 
   for i in 0..<worldSize:
     if abs(i + 0.5 - worldSize/2f) <= 5:
@@ -169,7 +175,13 @@ template genWorld(cx, cy: int) =
     if t.empty and tile(x, y - 1).wall == blockDirt and chance(0.5):
       setWall(x, y, blockGrass)
 
-macro shoot(t: untyped, ent: EntityRef, xp, yp, rot: float32, speed = 0.1, damage = 1f, life = 400f) =
+template restart =
+  sysAll.clearAll()
+  genWorld(0, 1, true)
+  discard newEntityWith(Player(xs: 1f, ys: 1f), Pos(y: 5, x: worldSize/2), Input(), Falling(), Solid(), Vel(xdrag: 50, ydrag: 2), Health(value: 2), Hit(s: 0.8))
+
+
+macro shoot(t: untyped, ent: EntityRef, xp, yp, rot: float32, speed = 0.1, damage = 1, life = 400f) =
   let effectId = ident("effectId" & t.repr.capitalizeAscii)
   result = quote do:
     let vel = vec2l(`rot`, `speed`)
@@ -228,6 +240,7 @@ sys("bullet", [Pos, Vel, Bullet, Hit]):
     item.pos.y += item.vel.y
 
     if collidesTiles(rectCenter(item.pos.x, item.pos.y, item.hit.s, item.hit.s), proc(x, y: int): bool = solid(x, y)):
+      effectPhit(item.pos.x, item.pos.y)
       item.entity.delete()
 
 sys("bulletEffect", [Pos, Vel, Bullet, Effect]):
@@ -290,6 +303,26 @@ sys("collide", [Pos, Vel, Bullet, Hit]):
         let
           hitter = item.entity
           target = elem.entity
+
+        var kill = false
+
+        whenComp(hitter, Damage):
+          whenComp(target, Health):
+            whenComp(target, Pos):
+              health.value -= damage.amount
+
+              if health.value <= 0:
+                effectPdeath(pos.x, pos.y)
+                kill = true
+
+        if kill:
+          if target.has Player:
+            restart()
+            break
+          else:
+            target.delete()
+
+        effectPhit(item.pos.x, item.pos.y)
         hitter.delete()
         break
 
@@ -315,9 +348,7 @@ sys("draw", [Main]):
     fau.pixelScl = 1f / tsize
     initContent()
 
-    genWorld(0, 1)
-
-    discard newEntityWith(Player(xs: 1f, ys: 1f), Pos(y: 5, x: worldSize/2), Input(), Falling(), Solid(), Vel(xdrag: 50, ydrag: 2), Health(value: 2), Hit(s: 0.8))
+    restart()
 
     #load all block textures before rendering
     for b in blockList:
@@ -336,11 +367,15 @@ sys("draw", [Main]):
   start:
     if keyEscape.tapped: quitApp()
 
-    #TODO for a better cam: fau.cam.resize(fau.widthf / (fau.heightf / worldSize), worldSize)
-    fau.cam.resize(fau.widthf / scl, fau.heightf / scl)
+    let
+      wsizepx = worldSize * tsize
+      pixelation = (scl / tsize).int
+      aspect = fau.widthf / fau.heightf
+
+    fau.cam.resize(aspect * worldSize, worldSize)
     fau.cam.use()
 
-    sys.buffer.resize(fau.width div pixelation, fau.height div pixelation)
+    sys.buffer.resize((worldSize * tsize * aspect).int, (worldSize * tsize).int)
     sys.buffer.push(colorClear)
     let buf = sys.buffer
     let bloom = sys.bloom
@@ -400,6 +435,10 @@ sys("drawSpiker", [Spiker, Pos, Enemy]):
     let s = 1f + sin(item.enemy.life, 0.1f, 0.1f)
     draw("spiker-spikes".patch, item.pos.x, item.pos.y, rotation = item.enemy.life * 2.0, xscl = s, yscl = s)
     draw("spiker".patch, item.pos.x, item.pos.y, xscl = s, yscl = s)
+
+sys("all", [Pos]):
+  init:
+    discard
 
 makeEffectsSystem()
 
