@@ -50,7 +50,8 @@ registerComponents(defaultComponentOptions):
     Hit = object
       s: float32
     Player = object
-    DrawPlayer = object
+      xs, ys: float32
+      wasGround: bool
     Health = object
       value: int
 
@@ -187,7 +188,7 @@ template timer(time: untyped, delay: float32, body: untyped) =
 
 makeTimedSystem()
 
-sys("controlled", [Input, Pos, Vel]):
+sys("controlled", [Input, Pos, Vel, Player]):
   all:
     let v = vec2(axis(keyA, keyD), 0).lim(1) * pspeed * fau.delta
     item.vel.x += v.x
@@ -197,6 +198,8 @@ sys("controlled", [Input, Pos, Vel]):
       item.vel.y += jumpvel
       effectJump(item.pos.x, item.pos.y - hith/2f)
       item.vel.hang = 0
+      item.player.ys = 2.1f
+      item.player.xs = 0.6f
 
     #TODO attack
     if keyJ.tapped:
@@ -258,6 +261,13 @@ sys("camfollow", [Input, Pos]):
     fau.cam.pos += vec2((fau.widthf mod scl) / scl, (fau.heightf mod scl) / scl) * fau.pixelScl
     #fau.cam.pos = item.pos.vec2
 
+sys("playerground", [Player, Vel]):
+  all:
+    if not item.player.wasGround and item.vel.onGround:
+      item.player.xs = 1.8f
+      item.player.ys = 0.5f
+    item.player.wasGround = item.vel.onGround
+
 sys("quadtree", [Pos, Vel, Hit]):
   vars:
     tree: Quadtree[QuadRef]
@@ -307,7 +317,7 @@ sys("draw", [Main]):
 
     genWorld(0, 1)
 
-    discard newEntityWith(Player(), DrawPlayer(), Pos(y: 5, x: worldSize/2), Input(), Falling(), Solid(), Vel(xdrag: 50, ydrag: 2), Health(value: 2), Hit(s: 0.8))
+    discard newEntityWith(Player(xs: 1f, ys: 1f), Pos(y: 5, x: worldSize/2), Input(), Falling(), Solid(), Vel(xdrag: 50, ydrag: 2), Health(value: 2), Hit(s: 0.8))
 
     #load all block textures before rendering
     for b in blockList:
@@ -380,13 +390,16 @@ sys("draw", [Main]):
 
 sys("drawPlayer", [Player, Pos]):
   all:
-    draw("player".patch, item.pos.x, item.pos.y)
+    let alpha = 10.0 * fau.delta
+    item.player.xs = item.player.xs.lerpc(1.0, alpha)
+    item.player.ys = item.player.ys.lerpc(1.0, alpha)
+    draw("player".patch, item.pos.x, item.pos.y, xscl = item.player.xs, yscl = item.player.ys)
 
 sys("drawSpiker", [Spiker, Pos, Enemy]):
   all:
     let s = 1f + sin(item.enemy.life, 0.1f, 0.1f)
-    draw("spiker-spikes".patch, item.pos.x, item.pos.y, rotation = item.enemy.life * 2.0, scl = s)
-    draw("spiker".patch, item.pos.x, item.pos.y, scl = s)
+    draw("spiker-spikes".patch, item.pos.x, item.pos.y, rotation = item.enemy.life * 2.0, xscl = s, yscl = s)
+    draw("spiker".patch, item.pos.x, item.pos.y, xscl = s, yscl = s)
 
 makeEffectsSystem()
 
