@@ -1,18 +1,72 @@
-import ecs, presets/[basic, effects]
+import ecs, presets/[basic, effects, content]
 
 static: echo staticExec("faupack -p:assets-raw/sprites -o:assets/atlas")
 
-const scl = 4.0
+#region types & consts
+
+const
+  scl = 4.0
+  worldSize = 60
+
+type
+  Rot = range[0..3]
+  Tile = object
+    floor, wall: Block
+    rot: Rot
+
+  Block = ref object of Content
+    solid: bool
+
 
 registerComponents(defaultComponentOptions):
   type
     Vel = object
       x, y: float32
 
-sys("init", [Main]):
+makeContent:
+  air = Block()
+  metal = Block()
 
+#endregion
+
+#region global variables
+
+var tiles = newSeq[Tile](worldSize * worldSize)
+
+#endregion
+
+#region utilities
+
+proc tile(x, y: int): Tile =
+  if x >= worldSize or y >= worldSize or x < 0 or y < 0: Tile(floor: if not arena: blockGrass else: blockDarkgrass, wall: blockAir) else: tiles[x + y*worldSize]
+
+proc setWall(x, y: int, wall: Block) = tiles[x + y*worldSize].wall = wall
+
+proc solid(x, y: int): bool = tile(x, y).wall.solid
+
+iterator eachTile*(): tuple[x, y: int, tile: Tile] =
+  const pad = 2
+  let
+    xrange = (fau.cam.w / 2).ceil.int + pad
+    yrange = (fau.cam.h / 2).ceil.int + pad
+    camx = fau.cam.pos.x.ceil.int
+    camy = fau.cam.pos.y.ceil.int
+
+  for cx in -xrange..xrange:
+    for cy in -yrange..yrange:
+      let
+        wcx = camx + cx
+        wcy = camy + cy
+
+      yield (wcx, wcy, tile(wcx, wcy))
+
+#endregion
+
+#region systems
+
+sys("init", [Main]):
   init:
-    discard
+    initContent()
 
   start:
     if keyEscape.tapped: quitApp()
@@ -26,3 +80,5 @@ sys("init", [Main]):
     discard
 
 launchFau("ld48")
+
+#endregion
