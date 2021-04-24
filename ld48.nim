@@ -136,25 +136,37 @@ template genWorld(cx, cy: int) =
     if fractal(x.float, y.float, 2, freq = 0.1) > 0.2:
       setBack(x, y, blockDirt)
 
+  #create container
   for i in 0..<worldSize:
-    let fit = abs(i + 0.5 - worldSize/2f) > 5
-    #top
-    if cy != -1 or fit: setWall(i, worldSize - 1, blockDirt)
-    #left
-    if cx != 1 or fit: setWall(0, i, blockDirt)
-    #right
-    if cx != -1 or fit: setWall(worldSize - 1, i, blockDirt)
-    #bot
-    if fit: setWall(i, 0, blockDirt)
+    setWall(i, worldSize - 1, blockDirt)
+    setWall(0, i, blockDirt)
+    setWall(worldSize - 1, i, blockDirt)
+    setWall(i, 0, blockDirt)
 
-  discard newEntityWith(Enemy(), Spiker(), Pos(y: 5, x: rand(0.5f..worldSize.float32 - 1)), Solid(), Vel())
+  #discard newEntityWith(Enemy(), Spiker(), Pos(y: 5, x: rand(0.5f..worldSize.float32 - 1)), Solid(), Vel())
 
   for x, y, t in allTiles():
-    if t.empty and tile(x, y - 1).wall == blockDirt and chance(0.3):
-      setWall(x, y, blockGrass)
-
     if t.empty and fractal(x.float, y.float + 30, 2, freq = 0.1) > 0.3:
       setWall(x, y, t.back)
+
+  #create gaps
+  var
+    left = cx == 1 or chance(0.3)
+    right = cx == -1 or chance(0.3)
+    top = cy == -1
+    bot = chance(0.1) or not((left and cx != 1) or (right and cx != -1))
+
+  for i in 0..<worldSize:
+    if abs(i + 0.5 - worldSize/2f) <= 5:
+      if top: setWall(i, worldSize - 1, blockAir)
+      if left: setWall(0, i, blockAir)
+      if right: setWall(worldSize - 1, i, blockAir)
+      if bot: setWall(i, 0, blockAir)
+
+  #scatter grass
+  for x, y, t in allTiles():
+    if t.empty and tile(x, y - 1).wall == blockDirt and chance(0.5):
+      setWall(x, y, blockGrass)
 
 macro shoot(t: untyped, ent: EntityRef, xp, yp, rot: float32, speed = 0.1, damage = 1f, life = 400f) =
   let effectId = ident("effectId" & t.repr.capitalizeAscii)
