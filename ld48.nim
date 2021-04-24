@@ -1,4 +1,4 @@
-import ecs, presets/[basic, effects, content], math, sequtils, quadtree
+import ecs, presets/[basic, effects, content], math, sequtils, quadtree, simplex, random
 
 static: echo staticExec("faupack -p:assets-raw/sprites -o:assets/atlas")
 
@@ -28,6 +28,7 @@ type
   Block = ref object of Content
     solid: bool
     patches: seq[Patch]
+    top: Patch
     color: Color
 
   QuadRef = object
@@ -101,14 +102,20 @@ iterator eachTile*(): tuple[x, y: int, tile: Tile] =
 proc genWorld(cx, cy: int) =
   for tile in tiles.mitems:
     tile.wall = blockAir
-    tile.back = blockDirt
+    tile.back = blockAir
+
+  simplexSeed(rand(100000))
+
+  for x in 0..<worldSize:
+    for y in 0..<worldSize:
+      if fractal(x.float, y.float, 2, freq = 0.1) > 0.2:
+        setBack(x, y, blockDirt)
 
   for i in 0..<worldSize:
     if abs(i + 0.5 - worldSize/2f) > 5:
       setWall(i, worldSize - 1, blockDirt)
       setWall(0, i, blockDirt)
       setWall(worldSize - 1, i, blockDirt)
-
     setWall(i, 0, blockDirt)
 
 #endregion
@@ -200,6 +207,7 @@ sys("draw", [Main]):
 
     #load all block textures before rendering
     for b in blockList:
+      b.top = (b.name & "-top").patch
       var maxFound = 0
       for i in 1..12:
         if not fau.atlas.patches.hasKey(b.name & $i): break
@@ -213,7 +221,8 @@ sys("draw", [Main]):
 
   start:
     if keyEscape.tapped: quitApp()
-    
+
+    #TODO for a better cam: fau.cam.resize(fau.widthf / (fau.heightf / worldSize), worldSize)
     fau.cam.resize(fau.widthf / scl, fau.heightf / scl)
     fau.cam.use()
 
@@ -221,7 +230,7 @@ sys("draw", [Main]):
     sys.buffer.push(colorClear)
     let buf = sys.buffer
 
-    draw(100, proc() =
+    draw(1000, proc() =
       buf.pop()
       buf.blitQuad()
     )
@@ -243,6 +252,9 @@ sys("draw", [Main]):
         for dx, dy, i in d4i():
           if tile(x + dx, y + dy).wall.id != t.wall.id:
             draw(edge, x, y, rotation = i * 90.rad, color = if i > 1: edgeLight * t.wall.color else: edgeDark * t.wall.color)
+
+      if t.wall.top.exists and tile(x, y + 1).wall.id == 0:
+        draw(t.wall.top, x, y)
 
 
 sys("drawPlayer", [Player, Pos]):
