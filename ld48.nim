@@ -81,7 +81,7 @@ defineEffects:
       fillCircle(x, y, 7.px * e.fout, color = %"c3c3c3")
 
   shadowBullet:
-    fillCircle(e.x, e.y, 5.px, z = layerBloom, color = %"ff55ff")
+    fillCircle(e.x, e.y, 4.px, z = layerBloom, color = %"ff55ff")
     fillCircle(e.x, e.y, 2.px, z = layerBloom, color = %"ffc0ff")
 
 #endregion
