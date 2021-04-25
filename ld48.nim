@@ -110,6 +110,7 @@ defineEffects:
 var lastPos: Vec2
 var lastPlayer: EntityRef
 var timers: Timers
+var spawnedBoss = false
 
 #region utilities
 
@@ -119,6 +120,7 @@ template restart(start: bool = false) =
   sysAll.clearAll()
   fau.time = 0f
   timers = Timers()
+  spawnedBoss = false
 
   for value in timers.fields:
     value = rand(0f..1f)
@@ -162,7 +164,7 @@ sys("spawner", [Main]):
 
     #TODO remove later
     when defined(debug):
-      phase = 6
+      phase = 8
 
     case phase:
       of 0:
@@ -232,17 +234,24 @@ sys("spawner", [Main]):
         timer(timers.eggs1, 8f):
           makeEnemy(Eggnog, ex = worldw + 1f, ey = worldh / 2f, health = 10, hsize = 1.1f, v = 180f.rad)
       of 6:
-
-        timer(timers.eggs0, 5f):
-          makeEnemy(Eggnog, ex = worldw + 1f, ey = 0, health = 10, hsize = 1.1f, v = 140f.rad)
-          makeEnemy(Eggnog, ex = worldw + 1f, ey = worldh, health = 10, hsize = 1.1f, v = 220f.rad)
-      of 7:
-        timer(timers.eggs1, 7f):
+        timer(timers.eggs1, 8f):
           makeEnemy(Pickled, ex = worldw + 1f, ey = worldh / 2f, health = 15, hsize = 1.3f)
 
-        timer(timers.boiled1, 2f):
-          makeEnemy(Fried, ex = worldw + 1f, ey = worldh/2f, health = 6, hsize = 1f)
-          makeEnemy(Fried, ex = worldw + 1f, ey = 1f, health = 6, hsize = 1f)
+        timer(timers.eggs0, 5f):
+          makeEnemy(Eggnog, ex = worldw + 1f, ey = 0, health = 8, hsize = 1.1f, v = 140f.rad)
+          makeEnemy(Eggnog, ex = worldw + 1f, ey = worldh, health = 8, hsize = 1.1f, v = 220f.rad)
+      of 7:
+        timer(timers.boiled1, 1f):
+          makeEnemy(Fried, ex = worldw + 1f, ey = worldh/2f, health = 5, hsize = 1f)
+          makeEnemy(Fried, ex = worldw + 1f, ey = 1f, health = 5, hsize = 1f)
+      of 8:
+        timer(timers.eggs1, 5f):
+          makeEnemy(Pickled, ex = worldw + 1f, ey = rand(1f..(worldh-1f)), health = 15, hsize = 1.3f)
+      of 9:
+        timer(timers.eggs1, 5f):
+          if not spawnedBoss:
+            makeEnemy(OmletteBig, ex = worldw + 2f, ey = worldh/2f, health = 80, hsize = 1.5f, v = 180f.rad)
+            spawnedBoss = true
       else:
         #TODO
         discard
@@ -389,7 +398,7 @@ sys("eggnog", [Eggnog, Pos, Enemy]):
     item.pos.x += m.x
     item.pos.y += m.y
 
-    timer(item.enemy.reload, 0.2f):
+    timer(item.enemy.reload, 0.23f):
       circle(2):
         shoot(standardBullet, item.entity, item.pos.x, item.pos.y, angle + item.enemy.val + 90.rad, color = %"eec39a")
 
@@ -415,14 +424,13 @@ sys("boiled", [Enemy, Pos, Boiled]):
 
 sys("fried", [Enemy, Pos, Fried]):
   all:
-    if item.pos.x > worldw - 1f:
-      item.pos.x -= 0.85f * fau.delta
-    elif not item.enemy.val.awithin(90.rad, 0.01f):
-      item.enemy.val = aapproach(item.enemy.val, 90f.rad, 2f * fau.delta)
-    else:
-      item.pos.x -= 3.5f * fau.delta
-      timer(item.enemy.reload, 1.3f):
-        shoot(standardBullet, item.entity, item.pos.x, item.pos.y, 180f.rad, color = %"d8dff7", speed = 0.05f)
+    item.pos.x -= 2f * fau.delta
+    item.pos.y += sin(item.enemy.life, 1.1f, 0.1f)
+
+    item.enemy.val += fau.delta * 4f
+
+    timer(item.enemy.reload, 1f):
+      shoot(standardBullet, item.entity, item.pos.x, item.pos.y, 90f.rad + item.enemy.val, color = %"fbf236")
 
 sys("omlette", [Enemy, Pos, Omlette]):
   all:
@@ -561,6 +569,11 @@ sys("drawtoast", [Toast, Enemy, Pos, Health]):
   all:
     let s = sin(item.enemy.life, 1f / 10f, 0.2f)
     draw("toast".patch, item.pos.x, item.pos.y, mixcolor = rgba(1, 1, 1, clamp(item.health.flash)), rotation = item.enemy.val, xscl = 1f + s, yscl = 1f - s)
+
+sys("drawbigomlette", [Toast, Enemy, Pos, Health]):
+  all:
+    let s = sin(item.enemy.life, 1f / 10f, 0.2f)
+    draw("omlette-big".patch, item.pos.x, item.pos.y, mixcolor = rgba(1, 1, 1, clamp(item.health.flash)), rotation = item.enemy.life.rad, xscl = 1f + s, yscl = 1f - s)
 
 sys("all", [Pos]):
   init:
