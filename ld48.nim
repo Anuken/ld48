@@ -392,6 +392,8 @@ sys("draw", [Main]):
     let buf = sys.buffer
     let bloom = sys.bloom
 
+    draw("bg".patch, worldSize/2f - 0.5f, worldSize/2f - 0.5f, z = -999)
+
     draw(1000, proc() =
       buf.pop()
       buf.blitQuad()
