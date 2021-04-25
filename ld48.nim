@@ -171,7 +171,7 @@ sys("spawner", [Main]):
       of 0:
         timer(timers.eggs0, 14f):
           let vy = rand(6f..(worldh-6f))
-          circlev(7, 4f):
+          circlev(5, 4f):
             makeEnemy(Egg, ex = worldw + 5f + x, ey = y + vy, spr = "egg")
         timer(timers.boiled1, 3f):
           makeEnemy(Boiled, ex = worldw + 1f, ey = rand(1f..(worldh-1f)))
@@ -361,17 +361,21 @@ sys("collide", [Pos, Bullet, Hit]):
               if health.value <= 0:
                 effectPdeath(pos.x, pos.y)
                 kill = true
+              soundHit.play()
 
               whenComp(target, Player):
+                soundPlayerHit.play()
                 player.invuln = 1f
                 effectFlash(0, 0, col = %"ff464688", life = 0.3f)
 
         if kill:
           if target.has Player:
+            soundDeath.play()
             restart()
             break
           else:
             whenComp(target, Enemy):
+              soundKill.play()
               destroyed.inc
               if chance(enemy.drop):
                 whenComp(target, Pos):
@@ -404,6 +408,7 @@ sys("powerup", [Powerup, Pos]):
       effectPickup(item.pos.x, item.pos.y)
       lastPlayer.fetch(Player).shoot = item.powerup.shoot
       item.entity.delete()
+      soundPowerup.play()
 
 sys("egg", [Egg, Pos, Enemy]):
   all:
