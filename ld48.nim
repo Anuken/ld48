@@ -20,6 +20,7 @@ const
   layerBack = -2f
   hangTime = 0.05
   layerBloom = 50
+  invulnSecs = 0.5
 
 type
   QuadRef = object
@@ -36,8 +37,10 @@ registerComponents(defaultComponentOptions):
     Player = object
       xs, ys: float32
       shoot: float32
+      invuln: float32
     Health = object
       value: int
+      flash: float32
 
     Input = object
     Solid = object
@@ -49,8 +52,10 @@ registerComponents(defaultComponentOptions):
     #enemies
     Enemy = object
       life: float32
-    Spiker = object
       reload: float32
+      sprite: string
+    Spiker = object
+    Egg = object
 
 defineEffects:
 
@@ -78,13 +83,17 @@ defineEffects:
 
 #endregion
 
+var lastPos: Vec2
+
 #region utilities
 
 proc inBounds(value: Vec2): bool = value.x >= 0 and value.x <= worldw and value.y >= 0 and value.y <= worldh
 
 template restart(start: bool = false) =
   sysAll.clearAll()
-  discard newEntityWith(Player(xs: 1f, ys: 1f), Pos(y: 5, x: worldh/2), Input(), Solid(), Health(value: 3), Hit(s: 0.8))
+
+  discard newEntityWith(Player(xs: 1f, ys: 1f), Pos(y: 5, x: worldh/2), Input(), Solid(), Health(value: 3), Hit(s: 0.6))
+  discard newEntityWith(Egg(), Enemy(sprite: "egg"), Pos(y: 5, x: worldw - 1), Solid(), Health(value: 5), Hit(s: 0.8))
 
   if not start:
     effectFlash(0, 0, col = colorWhite, life = 2f)
@@ -92,12 +101,15 @@ template restart(start: bool = false) =
     when not defined(debug):
       effectFlash(0, 0, col = colorBlack, life = 3f)
 
-macro shoot(t: untyped, ent: EntityRef, xp, yp, rot: float32, speed = 0.1, damage = 1, life = 400f, size = 0.2f) =
+macro shoot(t: untyped, ent: EntityRef, xp, yp, rot: float32, speed = 0.1, damage = 1, life = 400f, size = 0.3f) =
   let effectId = ident("effectId" & t.repr.capitalizeAscii)
   result = quote do:
     let vel = vec2l(`rot`, `speed`)
     #hitEffect: effectIdHit,
     discard newEntityWith(Pos(x: `xp`, y: `yp`), Timed(lifetime: `life`), Effect(id: `effectId`, rotation: `rot`), Bullet(shooter: `ent`), Hit(s: `size`), Vel(x: vel.x, y: vel.y), Damage(amount: `damage`))
+
+template makeEnemy(t: untyped, ey: float32, health: int = 5, hsize = 0.8f) =
+  discard newEntityWith(t(), Enemy(sprite: "egg"), Pos(y: ey, x: worldw + 1), Solid(), Health(value: health), Hit(s: hsize))
 
 template timer(time: untyped, delay: float32, body: untyped) =
   time += fau.delta
@@ -111,17 +123,28 @@ template timer(time: untyped, delay: float32, body: untyped) =
 
 makeTimedSystem()
 
+sys("spawner", [Main]):
+  start:
+    if chance(0.01):
+      makeEnemy(Egg, rand(0f..worldh.float32))
+
 sys("controlled", [Input, Pos, Player]):
   all:
     let v = vec2(axis(keyA, keyD), axis(KeyCode.keyS, keyW)).lim(1) * pspeed * fau.delta
     item.pos.x += v.x
     item.pos.y += v.y
+    item.pos.x = clamp(item.pos.x, 0, worldw)
+    item.pos.y = clamp(item.pos.y, 0, worldh)
+
+    lastPos = item.pos.vec2
 
     if v.x.abs > 0:
       item.player.xs += sin(fau.time, 1f / 20f, 0.06)
 
+    item.player.invuln -= fau.delta / invulnSecs
+
     timer(item.player.shoot, 0.1):
-      shoot(frogb1, item.entity, item.pos.x, item.pos.y, 0, speed = 0.5f)
+      shoot(frogb1, item.entity, item.pos.x, item.pos.y, 0, speed = 0.4f)
 
 sys("bullet", [Pos, Vel, Bullet, Hit]):
   all:
@@ -141,16 +164,11 @@ sys("vel", [Pos, Vel]):
     item.pos.x += item.vel.x
     item.pos.y += item.vel.y
 
-sys("clampPos", [Pos]):
-  all:
-    item.pos.x = clamp(item.pos.x, 0, worldw)
-    item.pos.y = clamp(item.pos.y, 0, worldh)
-
 sys("quadtree", [Pos, Hit]):
   vars:
     tree: Quadtree[QuadRef]
   init:
-    sys.tree = newQuadtree[QuadRef](rect(-0.5, -0.5, worldh + 1, worldh + 1))
+    sys.tree = newQuadtree[QuadRef](rect(-1f, -1f, worldw + 2, worldh + 2))
   start:
     sys.tree.clear()
   all:
@@ -164,7 +182,14 @@ sys("collide", [Pos, Bullet, Hit]):
     let r = rectCenter(item.pos.x, item.pos.y, item.hit.s, item.hit.s)
     sysQuadtree.tree.intersect(r, sys.output)
     for elem in sys.output:
-      if elem.entity != item.bullet.shooter and elem.entity != item.entity and elem.entity.alive and not elem.entity.has(Bullet) and item.bullet.shooter.alive and not(elem.entity.has(Enemy) and item.bullet.shooter.has(Enemy)):
+      if elem.entity != item.bullet.shooter and
+        elem.entity != item.entity and
+        elem.entity.alive and
+        item.bullet.shooter.alive and
+        not elem.entity.has(Bullet) and
+        not(elem.entity.has(Enemy) and item.bullet.shooter.has(Enemy)) and
+        not(elem.entity.has(Player) and elem.entity.fetch(Player).invuln > 0):
+
         let
           hitter = item.entity
           target = elem.entity
@@ -175,10 +200,14 @@ sys("collide", [Pos, Bullet, Hit]):
           whenComp(target, Health):
             whenComp(target, Pos):
               health.value -= damage.amount
+              health.flash = 1f
 
               if health.value <= 0:
                 effectPdeath(pos.x, pos.y)
                 kill = true
+
+              whenComp(target, Player):
+                player.invuln = 1f
 
         if kill:
           if target.has Player:
@@ -191,14 +220,26 @@ sys("collide", [Pos, Bullet, Hit]):
         hitter.delete()
         break
 
+sys("hflash", [Health]):
+  all:
+    item.health.flash -= fau.delta / 0.3f
 
-sys("enemy", [Enemy]):
+sys("enemy", [Enemy, Pos]):
   all:
     item.enemy.life += fau.delta
+    if item.pos.x < -1f:
+      item.entity.delete()
 
 sys("spiker", [Spiker, Pos, Enemy]):
   all:
-    timer(item.spiker.reload, 1):
+    timer(item.enemy.reload, 1):
+      circle(4):
+        shoot(shadowBullet, item.entity, item.pos.x, item.pos.y, angle + item.enemy.life / 2.0)
+
+sys("egg", [Egg, Pos, Enemy]):
+  all:
+    item.pos.x -= 0.5f * fau.delta
+    timer(item.enemy.reload, 1):
       circle(4):
         shoot(shadowBullet, item.entity, item.pos.x, item.pos.y, angle + item.enemy.life / 2.0)
 
@@ -268,7 +309,7 @@ sys("drawPlayer", [Player, Pos, Health]):
       sscl = 10f.inv
       ox = sin(fau.time, sscl, 0.1f)
       oy = cos(fau.time, sscl, 0.1f)
-    draw("player".patch, item.pos.x + ox, item.pos.y + oy, xscl = item.player.xs, yscl = item.player.ys)
+    draw("player".patch, item.pos.x + ox, item.pos.y + oy, xscl = item.player.xs, yscl = item.player.ys, mixcolor = rgba(1, 1, 1, clamp(item.health.flash)))
     draw("boost".patch, item.pos.x - 4.px + ox, item.pos.y - 2.px + oy, xscl = 1f + sin(fau.time, 1f / 14f, 0.15f))
 
     let max = item.health.value
@@ -284,6 +325,11 @@ sys("drawSpiker", [Spiker, Pos, Enemy]):
     let s = 1f + sin(item.enemy.life, 0.1f, 0.1f)
     draw("spiker-spikes".patch, item.pos.x, item.pos.y, rotation = item.enemy.life * 2.0, xscl = s, yscl = s)
     draw("spiker".patch, item.pos.x, item.pos.y, xscl = s, yscl = s)
+
+sys("enemyDraw", [Enemy, Pos, Health]):
+  all:
+    if item.enemy.sprite != "":
+      draw(item.enemy.sprite.patch, item.pos.x, item.pos.y, mixcolor = rgba(1, 1, 1, clamp(item.health.flash)))
 
 sys("all", [Pos]):
   init:
