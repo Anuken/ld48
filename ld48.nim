@@ -27,7 +27,7 @@ type
     entity: EntityRef
     x, y, w, h: float32
   Shoot = enum
-    sbasic, striple, scircle
+    sbasic, striple, scircle, ssine, svert
   Timers = object
     eggs0, boiled0, toast1, eggs1, boiled1, formation, formation2: float32
 
@@ -72,12 +72,9 @@ registerComponents(defaultComponentOptions):
     Eggnog = object
     Omlette = object
     OmletteBig = object
+      phase: float32
 
 defineEffects:
-
-  shadowBullet:
-    fillCircle(e.x, e.y, 4.px, z = layerBloom, color = %"ff55ff")
-    fillCircle(e.x, e.y, 2.px, z = layerBloom, color = %"ffc0ff")
 
   standardBullet:
     fillCircle(e.x, e.y, 4.px, z = layerBloom, color = e.color)
@@ -95,9 +92,6 @@ defineEffects:
     particles(e.id, 6, e.x, e.y, 30.px * e.fin):
       fillPoly(x, y, 3, 8.px * e.fout, angle(x, y), color = %"99e550")
 
-  bolt(lifetime = 0.1):
-    fillPoly(e.x, e.y, 3, 8.px * e.fout, z = layerBloom, rotation = e.rotation, color = colorWhite)
-
   frogb1:
     fillCircle(e.x, e.y, 4.px, z = layerBloom, color = %"99e550")
     fillCircle(e.x, e.y, 2.px, z = layerBloom, color = colorWhite)
@@ -107,10 +101,16 @@ defineEffects:
 
 #endregion
 
-var lastPos: Vec2
-var lastPlayer: EntityRef
-var timers: Timers
-var spawnedBoss = false
+var
+  lastPos: Vec2
+  lastPlayer: EntityRef
+  timers: Timers
+  spawnedBoss = false
+  won = false
+  started = false
+  destroyed = 0
+  startfade = 1f
+  endfade = 0f
 
 #region utilities
 
@@ -121,11 +121,12 @@ template restart(start: bool = false) =
   fau.time = 0f
   timers = Timers()
   spawnedBoss = false
+  destroyed = 0
 
   for value in timers.fields:
     value = rand(0f..1f)
 
-  discard newEntityWith(Player(xs: 1f, ys: 1f), Pos(y: 5, x: worldh/2), Input(), Solid(), Health(value: 3), Hit(s: 0.6))
+  discard newEntityWith(Player(xs: 1f, ys: 1f), Pos(x: worldw/2f, y: worldh/2f), Input(), Solid(), Health(value: 3), Hit(s: 0.6))
 
   if not start:
     effectFlash(0, 0, col = colorWhite, life = 2f)
@@ -140,7 +141,7 @@ macro shoot(t: untyped, ent: EntityRef, xp, yp, rot: float32, speed = 0.08f, dam
     #hitEffect: effectIdHit,
     discard newEntityWith(Pos(x: `xp`, y: `yp`), Timed(lifetime: `life`), Effect(id: `effectId`, rotation: `rot`, color: `color`), Bullet(shooter: `ent`), Hit(s: `size`), Vel(x: vel.x, y: vel.y), Damage(amount: `damage`))
 
-template makeEnemy(t: untyped, ex = worldw + 1f, ey = worldh / 2f, health: int = 5, hsize = 0.8f, dropchance = 0.1f, spr: string = "", v = 0f) =
+template makeEnemy(t: untyped, ex = worldw + 1f, ey = worldh / 2f, health: int = 5, hsize = 0.8f, dropchance = 0.05f, spr: string = "", v = 0f) =
   discard newEntityWith(t(), Enemy(sprite: spr, drop: dropchance, val: v), Pos(y: ey, x: ex), Solid(), Health(value: health), Hit(s: hsize))
 
 template timer(time: untyped, delay: float32, body: untyped) =
@@ -159,12 +160,12 @@ sys("spawner", [Main]):
   vars:
     time: float32
   start:
+    if not started: return
     #the game is split into several phases; each one lasts a few seconds, with 6 total
     var phase = (fau.time / 40).int
 
     #TODO remove later
-    when defined(debug):
-      phase = 8
+    #when defined(debug): phase = 9
 
     case phase:
       of 0:
@@ -248,10 +249,18 @@ sys("spawner", [Main]):
         timer(timers.eggs1, 5f):
           makeEnemy(Pickled, ex = worldw + 1f, ey = rand(1f..(worldh-1f)), health = 15, hsize = 1.3f)
       of 9:
-        timer(timers.eggs1, 5f):
+        timer(timers.eggs1, 2f):
           if not spawnedBoss:
-            makeEnemy(OmletteBig, ex = worldw + 2f, ey = worldh/2f, health = 80, hsize = 1.5f, v = 180f.rad)
+            makeEnemy(OmletteBig, ex = worldw + 2f, ey = worldh/2f, health = 90, hsize = 2f, v = 180f.rad)
             spawnedBoss = true
+
+        timer(timers.boiled1, 0.3f):
+          for i in signs():
+            makeEnemy(Boiled, ex = worldw + 1f, ey = worldh/2f + (worldh/2f - (timers.formation + 0.75f)) * i, health = 4)
+          timers.formation += 1f
+          if timers.formation >= 3f:
+            timers.formation = 0
+            timers.boiled1 = -2f
       else:
         #TODO
         discard
@@ -275,17 +284,24 @@ sys("controlled", [Input, Pos, Player]):
 
     item.player.invuln -= fau.delta / invulnSecs
 
-    case item.player.shoot:
-      of sbasic:
-        timer(item.player.reload, 0.1): shoot(frogb1, item.entity, item.pos.x, item.pos.y, 0, speed = 0.4f)
-      of striple:
-        timer(item.player.reload, 0.15):
-          shotgun(3, 10f):
-            shoot(frogb1, item.entity, item.pos.x, item.pos.y, angle, speed = 0.4f)
-      of scircle:
-        timer(item.player.reload, 0.13):
-          circle(9):
-            shoot(frogb1, item.entity, item.pos.x, item.pos.y, angle, speed = 0.4f)
+    if started:
+      case item.player.shoot:
+        of sbasic:
+          timer(item.player.reload, 0.1): shoot(frogb1, item.entity, item.pos.x, item.pos.y, 0, speed = 0.4f)
+        of svert:
+          timer(item.player.reload, 0.06):
+            for i in signs():
+              shoot(frogb1, item.entity, item.pos.x, item.pos.y, i * 90f.rad, speed = 0.45f)
+        of striple:
+          timer(item.player.reload, 0.15):
+            shotgun(3, 10f):
+              shoot(frogb1, item.entity, item.pos.x, item.pos.y, angle, speed = 0.4f)
+        of scircle:
+          timer(item.player.reload, 0.12):
+            circle(9):
+              shoot(frogb1, item.entity, item.pos.x, item.pos.y, angle, speed = 0.4f)
+        of ssine:
+          timer(item.player.reload, 0.05): shoot(frogb1, item.entity, item.pos.x, item.pos.y, sin(fau.time, 6.inv, 11f.rad), speed = 0.4f)
 
 sys("bullet", [Pos, Vel, Bullet, Hit]):
   all:
@@ -356,9 +372,13 @@ sys("collide", [Pos, Bullet, Hit]):
             break
           else:
             whenComp(target, Enemy):
+              destroyed.inc
               if chance(enemy.drop):
                 whenComp(target, Pos):
                   discard newEntityWith(Pos(x: pos.x, y: pos.y), Powerup(shoot: rand(striple..Shoot.high)))
+
+              if target.has(OmletteBig):
+                won = true
             target.delete()
 
         effectPhit(item.pos.x, item.pos.y)
@@ -452,6 +472,28 @@ sys("toast", [Enemy, Pos, Toast]):
       shotgun(3, 15):
         shoot(standardBullet, item.entity, item.pos.x, item.pos.y, 180.rad + angle + sin(item.enemy.life, 4f.inv, 10f).rad, color = %"663931")
 
+sys("bigomlette", [Enemy, Pos, OmletteBig]):
+  all:
+    if item.pos.x > worldw - 3f:
+      item.pos.x -= 2f * fau.delta
+
+    item.omletteBig.phase += fau.delta
+    let phase = (item.omletteBig.phase / 8f).int mod 3
+    case phase:
+      of 0:
+        timer(item.enemy.reload, 0.25f):
+          shotgun(3, 2f):
+            shoot(standardBullet, item.entity, item.pos.x, item.pos.y, 180.rad + angle + sin(item.enemy.life, 4f.inv, 10f).rad, color = %"e2cd4c")
+      of 1:
+        timer(item.enemy.reload, 0.22f):
+          circle(20):
+            shoot(standardBullet, item.entity, item.pos.x, item.pos.y, angle + sin(item.enemy.life, 4f.inv, 10f).rad, color = %"e2cd4c")
+      of 2:
+        timer(item.enemy.reload, 0.16f):
+          for i in signs():
+            shoot(standardBullet, item.entity, item.pos.x, item.pos.y, 180.rad + sin(item.enemy.life, 3f.inv, 27f).rad * i + item.pos.vec2.angle(lastPos) + 180f.rad, color = %"e2cd4c")
+      else: discard
+
 sys("draw", [Main]):
   vars:
     buffer: Framebuffer
@@ -471,6 +513,16 @@ sys("draw", [Main]):
   start:
     if keyEscape.tapped: quitApp()
 
+    if keyW.down or KeyCode.keyS.down or keyA.down or keyD.down:
+      started = true
+
+    if won:
+      sysCollide.paused = true
+      sysControlled.paused = true
+      endfade = endfade.lerp(1f, 0.1f)
+
+    startfade = startfade.lerp(if started: 0f else: 1f, 5f * fau.delta)
+
     let
       wsizepx = worldh * tsize
       pixelation = (scl / tsize).int
@@ -483,6 +535,13 @@ sys("draw", [Main]):
     sys.buffer.push(colorClear)
     let buf = sys.buffer
     let bloom = sys.bloom
+
+    if startfade > 0.01f or not started:
+      draw("tutorial".patch, worldw/2f, worldh/2f, z = 52, color = startfade.alpha)
+
+    if endfade > 0.01f:
+      draw(fau.white, fau.cam.pos.x, fau.cam.pos.y, width = fau.cam.w, height = fau.cam.h, color = endfade.alpha, z = 53)
+      draw("victory".patch, worldw/2f, worldh/2f, color = endfade.alpha, z = 54)
 
     var bgp = sys.bg.Patch
     bgp.scroll(fau.time / 100f, 0f)
@@ -505,12 +564,7 @@ sys("draw", [Main]):
       for i in signs():
         draw("border".patch, fau.widthf/2f + i * fau.heightf * worldw / worldh / 2f, fau.heightf/2f, height = fau.heightf, width = 3f * 4f)
       drawFlush()
-      #replace with pause in the main bloom layer for smoother results
-      #bloom.render()
     )
-
-    #drawLayer(layerBloom, proc() = bloom.capture(), proc() = bloom.render())
-
 
 sys("drawPlayer", [Player, Pos, Health]):
   all:
@@ -537,6 +591,8 @@ sys("drawpowerup", [Pos, Powerup]):
     let name = case item.powerup.shoot:
       of striple: "p-triple"
       of scircle: "p-circle"
+      of ssine: "p-sine"
+      of svert: "p-vert"
       else: "powerup"
     draw(name.patch, item.pos.x, item.pos.y, mixcolor = rgba(1, 1, 1, absin(fau.time, 1f / 10f, 1f)))
 
@@ -570,7 +626,7 @@ sys("drawtoast", [Toast, Enemy, Pos, Health]):
     let s = sin(item.enemy.life, 1f / 10f, 0.2f)
     draw("toast".patch, item.pos.x, item.pos.y, mixcolor = rgba(1, 1, 1, clamp(item.health.flash)), rotation = item.enemy.val, xscl = 1f + s, yscl = 1f - s)
 
-sys("drawbigomlette", [Toast, Enemy, Pos, Health]):
+sys("drawbigomlette", [OmletteBig, Enemy, Pos, Health]):
   all:
     let s = sin(item.enemy.life, 1f / 10f, 0.2f)
     draw("omlette-big".patch, item.pos.x, item.pos.y, mixcolor = rgba(1, 1, 1, clamp(item.health.flash)), rotation = item.enemy.life.rad, xscl = 1f + s, yscl = 1f - s)
