@@ -162,7 +162,7 @@ sys("spawner", [Main]):
   start:
     if not started: return
     #the game is split into several phases; each one lasts a few seconds, with 6 total
-    var phase = (fau.time / 32).int
+    var phase = (fau.time / 30).int
 
     #TODO remove later
     #when defined(debug): phase = 1
