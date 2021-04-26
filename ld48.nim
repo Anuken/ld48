@@ -126,7 +126,7 @@ template restart(start: bool = false) =
   for value in timers.fields:
     value = rand(0f..1f)
 
-  discard newEntityWith(Player(xs: 1f, ys: 1f), Pos(x: worldw/2f, y: worldh/2f), Input(), Solid(), Health(value: 3), Hit(s: 0.6))
+  discard newEntityWith(Player(xs: 1f, ys: 1f), Pos(x: worldw/2f, y: worldh/2f), Input(), Solid(), Health(value: 4), Hit(s: 0.6))
 
   if not start:
     effectFlash(0, 0, col = colorWhite, life = 2f)
@@ -162,7 +162,7 @@ sys("spawner", [Main]):
   start:
     if not started: return
     #the game is split into several phases; each one lasts a few seconds, with 6 total
-    var phase = (fau.time / 40).int
+    var phase = (fau.time / 35).int
 
     #TODO remove later
     #when defined(debug): phase = 1
@@ -288,7 +288,7 @@ sys("controlled", [Input, Pos, Player]):
         of sbasic:
           timer(item.player.reload, 0.1): shoot(frogb1, item.entity, item.pos.x, item.pos.y, 0, speed = 0.4f)
         of svert:
-          timer(item.player.reload, 0.06):
+          timer(item.player.reload, 0.05):
             for i in signs():
               shoot(frogb1, item.entity, item.pos.x, item.pos.y, i * 90f.rad, speed = 0.45f)
         of striple:
@@ -300,7 +300,7 @@ sys("controlled", [Input, Pos, Player]):
             circle(9):
               shoot(frogb1, item.entity, item.pos.x, item.pos.y, angle, speed = 0.4f)
         of ssine:
-          timer(item.player.reload, 0.05): shoot(frogb1, item.entity, item.pos.x, item.pos.y, sin(fau.time, 6.inv, 11f.rad), speed = 0.4f)
+          timer(item.player.reload, 0.03): shoot(frogb1, item.entity, item.pos.x, item.pos.y, sin(fau.time, 6.inv, 11f.rad), speed = 0.4f)
 
 sys("bullet", [Pos, Vel, Bullet, Hit]):
   all:
@@ -512,7 +512,7 @@ sys("draw", [Main]):
 
     fau.pixelScl = 1f / tsize
 
-    musicAwful.play(loop = true)
+    #musicAwful.play(loop = true)
     restart(true)
 
   start:
