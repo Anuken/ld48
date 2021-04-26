@@ -165,7 +165,7 @@ sys("spawner", [Main]):
     var phase = (fau.time / 40).int
 
     #TODO remove later
-    #when defined(debug): phase = 9
+    #when defined(debug): phase = 1
 
     case phase:
       of 0:
@@ -177,7 +177,7 @@ sys("spawner", [Main]):
           makeEnemy(Boiled, ex = worldw + 1f, ey = rand(1f..(worldh-1f)))
       of 1:
         timer(timers.eggs0, 1.8f):
-          makeEnemy(Fried, ex = worldw + 1f, ey = rand(1f..(worldh-8f)), health = 7, hsize = 1f)
+          makeEnemy(Fried, ex = worldw + 1f, ey = rand(0.1f..(worldh-10f)), health = 7, hsize = 1f)
         timer(timers.boiled1, 8f):
           for v in [worldh - 1f, worldh - 2f, 1f, 2f]:
             makeEnemy(Boiled, ex = worldw + 1f, ey = v, health = 4)
@@ -278,7 +278,6 @@ sys("controlled", [Input, Pos, Player]):
 
     if v.x.abs > 0:
       item.player.xs += sin(fau.time, 1f / 20f, 0.06)
-
     #if v.y.abs > 0:
     #  item.player.ys += 0.08f
 
@@ -450,7 +449,7 @@ sys("boiled", [Enemy, Pos, Boiled]):
 sys("fried", [Enemy, Pos, Fried]):
   all:
     item.pos.x -= 2f * fau.delta
-    item.pos.y += sin(item.enemy.life, 1.1f, 0.1f)
+    item.pos.y += sin(item.enemy.life, 1.1f, 0.07f)
 
     item.enemy.val += fau.delta * 4f
 
@@ -513,6 +512,7 @@ sys("draw", [Main]):
 
     fau.pixelScl = 1f / tsize
 
+    musicAwful.play(loop = true)
     restart(true)
 
   start:
