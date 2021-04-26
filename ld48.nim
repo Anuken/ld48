@@ -162,7 +162,7 @@ sys("spawner", [Main]):
   start:
     if not started: return
     #the game is split into several phases; each one lasts a few seconds, with 6 total
-    var phase = (fau.time / 35).int
+    var phase = (fau.time / 32).int
 
     #TODO remove later
     #when defined(debug): phase = 1
@@ -512,7 +512,7 @@ sys("draw", [Main]):
 
     fau.pixelScl = 1f / tsize
 
-    musicAwful.play(loop = true)
+    when not defined(debug): musicAwful.play(loop = true)
     restart(true)
 
   start:
