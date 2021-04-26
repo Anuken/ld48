@@ -512,7 +512,7 @@ sys("draw", [Main]):
 
     fau.pixelScl = 1f / tsize
 
-    when not defined(debug): musicAwful.play(loop = true)
+    when not defined(debug): musicAwful.play(loop = true, volume = 0.8f)
     restart(true)
 
   start:
