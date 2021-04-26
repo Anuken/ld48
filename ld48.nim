@@ -512,7 +512,7 @@ sys("draw", [Main]):
 
     fau.pixelScl = 1f / tsize
 
-    #musicAwful.play(loop = true)
+    musicAwful.play(loop = true)
     restart(true)
 
   start:
